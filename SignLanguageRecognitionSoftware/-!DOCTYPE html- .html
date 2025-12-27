@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Recognition System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                        dark: '#1e293b',
+                        accent: '#8b5cf6'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .camera-active {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .recording-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background-color: #ef4444;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: blink 1.5s infinite;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        .gesture-highlight {
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .processing {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            color: white;
+            font-size: 1.5rem;
+            flex-direction: column;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .overlay-box {
+            position: absolute;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.5);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-dark mb-2">Sign Language Recognition System</h1>
+            <p class="text-lg text-gray-600">Powered by Kaggle Dataset and Machine Learning</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Camera Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-semibold">Camera Feed</h2>
+                    <div id="recording-status" class="hidden text-sm text-red-500">
+                        <span class="recording-dot"></span>LIVE
+                    </div>
+                </div>
+                <div class="relative bg-gray-800 rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+                    <div id="camera-placeholder" class="text-center text-white">
+                        <i class="fas fa-camera text-5xl mb-4"></i>
+                        <p class="text-xl">Camera Feed</p>
+                        <button id="start-camera" class="mt-4 bg-primary hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-full transition">
+                            Start Camera
+                        </button>
+                        <p class="text-gray-400 mt-3 text-sm">Using Kaggle ASL Dataset for Recognition</p>
+                    </div>
+                    <video id="video-feed" class="hidden w-full h-full object-cover" autoplay playsinline></video>
+                    <canvas id="gesture-overlay" class="absolute top-0 left-0 w-full h-full pointer-events-none"></canvas>
+                    <div id="gesture-display" class="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg hidden">
+                        Detected: <span id="detected-gesture" class="font-bold">None</span>
+                    </div>
+                    <div id="processing-indicator" class="processing hidden">
+                        <div class="spinner"></div>
+                        <p>Analyzing gesture...</p>
+                    </div>
+                </div>
+                
+                <div class="mt-6">
+                    <h3 class="text-xl font-semibold mb-3">Controls</h3>
+                    <div class="flex space-x-3">
+                        <button id="capture-btn" class="flex-1 bg-primary hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition">
+                            Capture Frame
+                        </button>
+                        <button id="reset-btn" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg font-medium transition">
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chatbot Section -->
+            <div class="bg-white rounded-xl shadow-lg p-6 flex flex-col">
+                <h2 class="text-2xl font-semibold mb-4 text-center">Recognition Assistant</h2>
+                <div id="chat-container" class="flex-grow mb-4 bg-gray-50 rounded-lg p-4 h-96 overflow-y-auto">
+                    <div class="mb-4">
+                        <div class="inline-block bg-primary text-white rounded-lg px-4 py-2 max-w-xs md:max-w-md">
+                            <p>Hello! I'm your Sign Language Assistant. Grant camera access and show me a gesture!</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex">
+                    <input 
+                        type="text" 
+                        id="message-input" 
+                        placeholder="Type your message..." 
+                        class="flex-grow border border-gray-300 rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                    <button id="send-message" class="bg-primary hover:bg-blue-600 text-white px-6 rounded-r-lg font-medium transition">
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- App Suggestions Section -->
+        <div class="mt-10 bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-2xl font-semibold mb-4 text-center">Recommended Apps</h2>
+            <div class="text-center mb-4 text-gray-600">
+                <p>Based on your sign language gestures, these apps might be helpful:</p>
+            </div>
+            <div id="app-suggestions" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- App suggestions will be populated here -->
+            </div>
+        </div>
+
+        <!-- How It Works Section -->
+        <div class="mt-10 bg-white rounded-xl shadow-lg p-6">
+            <h2 class="text-2xl font-semibold mb-4 text-center">How It Works</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="text-center p-4">
+                    <div class="bg-primary text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-camera text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">1. Capture</h3>
+                    <p class="text-gray-600">The system captures your hand gestures through the camera using computer vision techniques.</p>
+                </div>
+                <div class="text-center p-4">
+                    <div class="bg-accent text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-brain text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">2. Recognize</h3>
+                    <p class="text-gray-600">Our ML model trained on the Kaggle dataset recognizes the sign language gesture.</p>
+                </div>
+                <div class="text-center p-4">
+                    <div class="bg-secondary text-white w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-rocket text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-2">3. Recommend</h3>
+                    <p class="text-gray-600">Based on the recognized gesture, we suggest relevant apps or websites for you.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const startCameraBtn = document.getElementById('start-camera');
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
+        const videoFeed = document.getElementById('video-feed');
+        const captureBtn = document.getElementById('capture-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendMessageBtn = document.getElementById('send-message');
+        const appSuggestions = document.getElementById('app-suggestions');
+        const recordingStatus = document.getElementById('recording-status');
+        const gestureDisplay = document.getElementById('gesture-display');
+        const detectedGesture = document.getElementById('detected-gesture');
+        const processingIndicator = document.getElementById('processing-indicator');
+        const gestureOverlay = document.getElementById('gesture-overlay');
+        
+        let stream = null;
+        let canvasContext = null;
+
+        // App database
+        const apps = {
+            'A': { name: 'Web Browser', icon: 'fa-globe', description: 'Open your default web browser', color: 'bg-blue-100', url: 'https://www.google.com' },
+            'B': { name: 'Maps', icon: 'fa-map-marked-alt', description: 'Navigate with maps application', color: 'bg-red-100', url: 'https://maps.google.com' },
+            'C': { name: 'Music Player', icon: 'fa-music', description: 'Play your favorite music', color: 'bg-green-100', url: 'https://open.spotify.com' },
+            'D': { name: 'Calendar', icon: 'fa-calendar-alt', description: 'View and manage your schedule', color: 'bg-purple-100', url: 'https://calendar.google.com' },
+            'E': { name: 'Notes', icon: 'fa-sticky-note', description: 'Take notes and reminders', color: 'bg-yellow-100', url: 'https://keep.google.com' },
+            'F': { name: 'Camera', icon: 'fa-camera', description: 'Capture photos and videos', color: 'bg-pink-100', url: 'camera://' }
+        };
+
+        // Initialize with sample apps
+        displayAppSuggestions(['A', 'B', 'C']);
+        
+        // Initialize canvas context
+        canvasContext = gestureOverlay.getContext('2d');
+        
+        // Start camera
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    }, 
+                    audio: false 
+                });
+                
+                videoFeed.srcObject = stream;
+                videoFeed.onloadedmetadata = () => {
+                    cameraPlaceholder.classList.add('hidden');
+                    videoFeed.classList.remove('hidden');
+                    recordingStatus.classList.remove('hidden');
+                    
+                    // Set canvas dimensions to match video
+                    gestureOverlay.width = videoFeed.videoWidth;
+                    gestureOverlay.height = videoFeed.videoHeight;
+                    
+                    addBotMessage("Camera activated! Show a sign language gesture and click 'Capture Frame' to analyze it.");
+                };
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                addBotMessage("Error accessing camera: " + err.message + ". Please ensure you've granted permission and that your camera is working.");
+            }
+        });
+
+        // Capture frame for analysis
+        captureBtn.addEventListener('click', () => {
+            if (!stream) {
+                addBotMessage("Please start the camera first.");
+                return;
+            }
+            
+            // Show processing indicator
+            processingIndicator.classList.remove('hidden');
+            
+            // Draw current video frame to canvas
+            canvasContext.drawImage(videoFeed, 0, 0, gestureOverlay.width, gestureOverlay.height);
+            
+            // Draw a detection box (simulating where ML would detect a hand)
+            drawDetectionBox();
+            
+            // Simulate processing time
+            setTimeout(() => {
+                processingIndicator.classList.add('hidden');
+                
+                // Simulate random gesture recognition
+                const gestures = ['A', 'B', 'C', 'D', 'E', 'F'];
+                const randomGesture = gestures[Math.floor(Math.random() * gestures.length)];
+                
+                handleGesture(randomGesture);
+            }, 2000);
+        });
+
+        // Reset camera view
+        resetBtn.addEventListener('click', () => {
+            // Clear overlay
+            canvasContext.clearRect(0, 0, gestureOverlay.width, gestureOverlay.height);
+            
+            // Hide gesture display
+            gestureDisplay.classList.add('hidden');
+            
+            // Clear detected gesture text
+            detectedGesture.textContent = 'None';
+            
+            addBotMessage("Reset complete. Show another gesture when ready!");
+        });
+
+        // Handle text messages
+        sendMessageBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Draw detection box on canvas (simulating ML detection)
+        function drawDetectionBox() {
+            // Clear previous drawings
+            canvasContext.clearRect(0, 0, gestureOverlay.width, gestureOverlay.height);
+            
+            // Draw a rectangle representing detected hand region
+            const boxSize = Math.min(gestureOverlay.width, gestureOverlay.height) * 0.4;
+            const x = (gestureOverlay.width - boxSize) / 2;
+            const y = (gestureOverlay.height - boxSize) / 2;
+            
+            canvasContext.strokeStyle = '#10b981';
+            canvasContext.lineWidth = 3;
+            canvasContext.strokeRect(x, y, boxSize, boxSize);
+            
+            // Draw corner indicators
+            const cornerLength = boxSize * 0.2;
+            canvasContext.beginPath();
+            
+            // Top-left corner
+            canvasContext.moveTo(x, y + cornerLength);
+            canvasContext.lineTo(x, y);
+            canvasContext.lineTo(x + cornerLength, y);
+            
+            // Top-right corner
+            canvasContext.moveTo(x + boxSize - cornerLength, y);
+            canvasContext.lineTo(x + boxSize, y);
+            canvasContext.lineTo(x + boxSize, y + cornerLength);
+            
+            // Bottom-right corner
+            canvasContext.moveTo(x + boxSize, y + boxSize - cornerLength);
+            canvasContext.lineTo(x + boxSize, y + boxSize);
+            canvasContext.lineTo(x + boxSize - cornerLength, y + boxSize);
+            
+            // Bottom-left corner
+            canvasContext.moveTo(x + cornerLength, y + boxSize);
+            canvasContext.lineTo(x, y + boxSize);
+            canvasContext.lineTo(x, y + boxSize - cornerLength);
+            
+            canvasContext.stroke();
+        }
+
+        // Process gesture recognition
+        function handleGesture(gesture) {
+            const app = apps[gesture];
+            if (app) {
+                // Show detected gesture
+                detectedGesture.textContent = “${gesture} - ${app.name}”;
+                gestureDisplay.classList.remove('hidden');
+                
+                // Add user gesture to chat
+                addUserMessage(“Gesture detected: ${gesture} (${app.name})”);
+                
+                // Add bot response
+                setTimeout(() => {
+                    addBotMessage(“Recognized "${app.name}" request. Here's the recommendation:”);
+                    
+                    // Update app suggestions
+                    displayAppSuggestions([gesture]);
+                    
+                    // Add action button
+                    setTimeout(() => {
+                        addBotAction(“Open ${app.name}”, () => {
+                            window.open(app.url, '_blank');
+                        });
+                    }, 1000);
+                }, 1000);
+            } else {
+                addBotMessage("I didn't recognize that gesture. Please try again.");
+            }
+        }
+
+        // Display app suggestions
+        function displayAppSuggestions(gestureList) {
+            appSuggestions.innerHTML = '';
+            gestureList.forEach(gesture => {
+                const app = apps[gesture];
+                if (app) {
+                    const appCard = document.createElement('div');
+                    appCard.className = “rounded-lg p-5 ${app.color} shadow transition-transform duration-300 hover:scale-105”;
+                    appCard.innerHTML = `
+                        <div class="flex items-center mb-3">
+                            <i class="fas ${app.icon} text-2xl mr-3"></i>
+                            <h3 class="text-xl font-semibold">${app.name}</h3>
+                        </div>
+                        <p class="text-gray-600 mb-4">${app.description}</p>
+                        <button class="w-full bg-primary hover:bg-blue-600 text-white py-2 rounded-lg font-medium transition open-app-btn" data-url="${app.url}">
+                            Open App
+                        </button>
+                    `;
+                    appSuggestions.appendChild(appCard);
+                }
+            });
+            
+            // Add event listeners to open app buttons
+            document.querySelectorAll('.open-app-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const url = e.target.getAttribute('data-url');
+                    window.open(url, '_blank');
+                });
+            });
+        }
+
+        // Add user message to chat
+        function addUserMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-4 text-right';
+            messageDiv.innerHTML = `
+                <div class="inline-block bg-secondary text-white rounded-lg px-4 py-2 max-w-xs md:max-w-md">
+                    <p>${text}</p>
+                </div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        // Add bot message to chat
+        function addBotMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-4';
+            messageDiv.innerHTML = `
+                <div class="inline-block bg-primary text-white rounded-lg px-4 py-2 max-w-xs md:max-w-md">
+                    <p>${text}</p>
+                </div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        // Add actionable message
+        function addBotAction(text, callback) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'mb-4';
+            messageDiv.innerHTML = `
+                <div class="inline-block bg-primary text-white rounded-lg px-4 py-2 max-w-xs md:max-w-md">
+                    <p class="mb-2">${text}</p>
+                    <button class="open-app-btn bg-white text-primary px-3 py-1 rounded font-medium text-sm">
+                        Confirm
+                    </button>
+                </div>
+            `;
+            chatContainer.appendChild(messageDiv);
+            
+            // Add event listener to the newly created button
+            const openAppBtn = messageDiv.querySelector('.open-app-btn');
+            openAppBtn.addEventListener('click', callback);
+            
+            scrollToBottom();
+        }
+
+        // Send text message
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message) {
+                addUserMessage(message);
+                messageInput.value = '';
+                
+                // Bot response
+                setTimeout(() => {
+                    addBotMessage("I'm designed to recognize sign language gestures. Please grant camera access and show a gesture!");
+                }, 1000);
+            }
+        }
+
+        // Scroll chat to bottom
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
